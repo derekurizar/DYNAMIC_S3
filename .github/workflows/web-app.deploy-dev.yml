@@ -39,7 +39,7 @@ jobs:
 
       - name: Deploy to S3
         if: github.event_name != 'pull_request'
-        run: aws s3 sync ./src/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/${{GITHUB_REF##*/}} --delete\
+        run: aws s3 sync ./src/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/${GITHUB_REF##*/} --delete\
 
       - name: Invalidate Cloudfront CDN
         if: github.event_name != 'pull_request'
