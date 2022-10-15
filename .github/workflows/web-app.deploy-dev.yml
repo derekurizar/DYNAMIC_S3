@@ -1,0 +1,46 @@
+# This is an Action workflow for deploying Dev to S3
+
+name: Web App Deploy Dev
+
+# Controls when the action will run.
+on:
+  # Triggers the workflow on push or pull request events but only for the develop branch
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build-deploy:
+    strategy:
+      matrix:
+        node-version: [14.x]
+
+    name: Build and Deploy Dev
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: ${{ secrets.AWS_REGION_DEV }}
+
+      - name: Set Branch Name
+        run: |
+          GITHUB_REF=refs/heads/feature-branch-1
+
+      - name: Deploy to S3
+        if: github.event_name != 'pull_request'
+        run: aws s3 sync ./build/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/${GITHUB_REF##*/} --delete\
+
+      - name: Invalidate Cloudfront CDN
+        if: github.event_name != 'pull_request'
+        run: aws cloudfront create-invalidation --distribution-id=${{secrets.CLOUDFRONT_DISTRIBUTION_ID_DEV}} --paths '/*'

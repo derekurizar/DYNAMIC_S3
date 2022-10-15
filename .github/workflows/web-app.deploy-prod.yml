@@ -1,0 +1,142 @@
+# This is an Action workflow for deploying Production to S3
+
+name: Web App Deploy Production
+
+# Controls when the action will run.
+on:
+  # Triggers the workflow on pull request only for the release branch
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  test-jest:
+    strategy:
+      matrix:
+        node-version: [14.x]
+
+    name: Run Jest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup npmrc
+        run: echo "//registry.npmjs.org/:_authToken=${{secrets.NPM_TOKEN}}" > .npmrc
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npm run test -s
+        env:
+          REACT_APP_TYPE: ${{ secrets.REACT_APP_TYPE }}
+          REACT_APP_API_KEY: ${{ secrets.AWS_API_KEY_PROD }}
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL_PROD }}
+          REACT_APP_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY_PROD }}
+          REACT_APP_AUTH0_JWKS_URL: ${{secrets.AUTH0_JWKS_URL_PROD}}
+          REACT_APP_TIMEZONE_API_KEY: ${{secrets.GOOGLE_TIMEZONE_API_KEY_PROD}}
+
+  build-deploy:
+    strategy:
+      matrix:
+        node-version: [14.x]
+
+    needs: [test-jest]
+    name: Build and Deploy Production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup npmrc
+        run: echo "//registry.npmjs.org/:_authToken=${{secrets.NPM_TOKEN}}" > .npmrc
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Cache node modules
+        id: cache-npm
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-node-modules
+        with:
+          # npm cache files are stored in `~/.npm` on Linux/macOS
+          path: ~/.npm
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      - if: ${{ steps.cache-npm.outputs.cache-hit == 'false' }}
+        name: List the state of node modules
+        continue-on-error: true
+        run: npm list
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          REACT_APP_TYPE: ${{ secrets.REACT_APP_TYPE }}
+          REACT_APP_API_KEY: ${{ secrets.AWS_API_KEY_PROD }}
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL_PROD }}
+          REACT_APP_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY_PROD }}
+          REACT_APP_TIMEZONE_API_KEY: ${{ secrets.GOOGLE_TIMEZONE_API_KEY_PROD }}
+          REACT_APP_AUTH0_JWKS_URL: ${{secrets.AUTH0_JWKS_URL_PROD}}
+          REACT_APP_DD_APPLICATION_ID: ${{secrets.DD_APPLICATION_ID_PROD}}
+          REACT_APP_DD_CLIENT_TOKEN: ${{secrets.DD_CLIENT_TOKEN_PROD}}
+          REACT_APP_DD_SITE: ${{secrets.DD_SITE_PROD}}
+          REACT_APP_DD_SERVICE: ${{secrets.DD_SERVICE_PROD}}
+          REACT_APP_DD_ENV: ${{secrets.DD_ENV_PROD}}
+          REACT_APP_DD_SAMPLE_RATE: ${{secrets.DD_SAMPLE_RATE_PROD}}
+          REACT_APP_DD_TRACK_INTERACTIONS: ${{secrets.DD_TRACK_INTERACTIONS_PROD}}
+          REACT_APP_DD_DEFAULT_PRIVACY_LEVEL: ${{secrets.DD_DEFAULT_PRIVACY_LEVEL_PROD}}
+          REACT_APP_CWP_ACH_ENCRYPTION_KEY: ${{secrets.CWP_ACH_ENCRYPTION_KEY_PROD}}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ secrets.AWS_PRIMARY_REGION_PROD }}
+
+      - name: Deploy to S3
+        if: github.event_name != 'pull_request'
+        run: aws s3 sync ./build/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_PROD }} --delete\
+
+      - name: Invalidate Cloudfront CDN
+        if: github.event_name != 'pull_request'
+        run: aws cloudfront create-invalidation --distribution-id=${{secrets.CLOUDFRONT_DISTRIBUTION_ID_PROD}} --paths '/*'
+
+      - name: Configure AWS Credentials for Secondary Region
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ secrets.AWS_SECONDARY_REGION_PROD }}
+
+      - name: Deploy to Secondary S3
+        if: github.event_name != 'pull_request'
+        run: aws s3 sync ./build/ s3://${{ secrets.AWS_SECONDARY_S3_BUCKET_PROD }} --delete\
+
+      - name: Invalidate Secondary Cloudfront CDN
+        if: github.event_name != 'pull_request'
+        run: aws cloudfront create-invalidation --distribution-id=${{secrets.CLOUDFRONT_DISTRIBUTION_ID_PROD}} --paths '/*'
