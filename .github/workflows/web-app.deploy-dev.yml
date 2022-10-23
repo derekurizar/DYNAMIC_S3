@@ -31,7 +31,7 @@ jobs:
         run: aws s3 sync ./src/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/${{github.head_ref}} --delete\
 
       - name: Get name of the merged branch
-        id: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: tonynguyenit18/github-action-custom-vars@v1
 
       - name: Delete folder of the merged branch
