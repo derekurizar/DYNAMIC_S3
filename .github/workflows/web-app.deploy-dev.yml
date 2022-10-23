@@ -33,7 +33,6 @@ jobs:
       - name: Get name of the merged branch
         id: github.event_name != 'pull_request'
         uses: tonynguyenit18/github-action-custom-vars@v1
-        run: echo Folder to delete $RECENT_MERGED_BRANCH_NAME
 
       - name: Delete folder of the merged branch
         if: github.event_name != 'pull_request'
