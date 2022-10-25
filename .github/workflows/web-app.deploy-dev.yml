@@ -40,7 +40,7 @@ jobs:
 
       - name: Copy files to root folder
         if: github.event_name != 'pull_request'
-        run: aws s3 sync ./helpers/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/error --recursive
+        run: aws s3 sync ./helpers/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/error --delete
 
       - name: Invalidate Cloudfront CDN
         run: aws cloudfront create-invalidation --distribution-id=${{secrets.CLOUDFRONT_DISTRIBUTION_ID_DEV}} --paths '/*'
